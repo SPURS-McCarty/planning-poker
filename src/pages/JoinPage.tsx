@@ -4,7 +4,7 @@ import { useRoom } from '../RoomContext';
 import { loadRoom } from '../utils';
 import type { Room, UserRole } from '../types';
 import { doc, getDoc } from 'firebase/firestore';
-import { db, hasFirebaseConfig } from '../firebase';
+import { db, ensureFirebaseAuth, hasFirebaseConfig } from '../firebase';
 
 const ROOM_COLLECTION = 'planningPokerRooms';
 const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
@@ -25,9 +25,21 @@ export default function JoinPage() {
     let cancelled = false;
 
     void (async () => {
-      const snapshot = await getDoc(doc(db, ROOM_COLLECTION, roomId));
-      if (!cancelled && snapshot.exists()) {
-        setRemoteRoom(snapshot.data() as Room);
+      try {
+        const signedIn = await ensureFirebaseAuth();
+        if (!signedIn) {
+          if (!cancelled) setError('Realtime connection unavailable. Check Firebase auth settings.');
+          return;
+        }
+
+        const snapshot = await getDoc(doc(db, ROOM_COLLECTION, roomId));
+        if (!cancelled && snapshot.exists()) {
+          setRemoteRoom(snapshot.data() as Room);
+        }
+      } catch {
+        if (!cancelled) {
+          setError('Unable to load this room. Verify Firestore rules and Authentication.');
+        }
       }
     })();
 

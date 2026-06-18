@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import type { Room, Participant, UserRole } from './types';
 import { saveRoom, loadRoom, generateParticipantId, getOrCreateClientId } from './utils';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, hasFirebaseConfig } from './firebase';
+import { db, ensureFirebaseAuth, hasFirebaseConfig } from './firebase';
 
 interface RoomCtx {
   room: Room | null;
@@ -69,19 +69,15 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     
     // Poll localStorage every 1s as fallback
     pollingRef.current = setInterval(() => {
-      const stored = localStorage.getItem(`room_${roomId}`);
+      const stored = loadRoom(roomId);
       if (stored) {
-        try {
-          const r = JSON.parse(stored) as Room;
-          setRoom(r);
-        } catch (e) {
-          console.error('Failed to parse stored room', e);
-        }
+        setRoom(stored);
       }
     }, 1000);
   }
 
   function connectToRoom(roomId: string) {
+    void (async () => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
@@ -98,20 +94,39 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const signedIn = await ensureFirebaseAuth();
+    if (!signedIn) {
+      console.warn('Firebase auth unavailable, using localStorage sync only');
+      startPollingFallback(roomId);
+      return;
+    }
+
     const roomDoc = doc(db, ROOM_COLLECTION, roomId);
-    unsubscribeRef.current = onSnapshot(roomDoc, (snapshot) => {
-      if (!snapshot.exists()) return;
-      const nextRoom = snapshot.data() as Room;
-      setRoom(nextRoom);
-      saveRoom(nextRoom);
-    });
+    unsubscribeRef.current = onSnapshot(
+      roomDoc,
+      (snapshot) => {
+        if (!snapshot.exists()) return;
+        const nextRoom = snapshot.data() as Room;
+        setRoom(nextRoom);
+        saveRoom(nextRoom);
+      },
+      (error) => {
+        console.error('Firestore subscription failed', error);
+        startPollingFallback(roomId);
+      },
+    );
+    })();
   }
 
   function broadcast(updated: Room) {
     saveRoom(updated); // keep localStorage as local fallback
     if (hasRealtime && db) {
-      const roomDoc = doc(db, ROOM_COLLECTION, updated.id);
-      void setDoc(roomDoc, updated, { merge: true });
+      void (async () => {
+        const signedIn = await ensureFirebaseAuth();
+        if (!signedIn) return;
+        const roomDoc = doc(db, ROOM_COLLECTION, updated.id);
+        await setDoc(roomDoc, updated, { merge: true });
+      })();
     }
     setRoom({ ...updated });
   }
