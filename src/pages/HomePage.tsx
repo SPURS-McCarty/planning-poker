@@ -6,6 +6,7 @@ import { generateId, saveRoom, generateParticipantId, customScaleFromInput } fro
 import { FolderPlus, Hand, Users, Eye } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, ensureFirebaseAuth, hasFirebaseConfig } from '../firebase';
+import { hasApiBackend, planningPokerApi } from '../backend/runtime';
 
 const STEPS = ['Name your session', 'Pick a scale'];
 const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
@@ -61,8 +62,31 @@ export default function HomePage() {
     sessionStorage.setItem(`pp_me_name_${roomId}`, yourName.trim());
     sessionStorage.setItem(`pp_me_role_${roomId}`, role);
 
-    // Save to Firestore immediately so other browsers can join
+    // Persist to configured backend if available
     void (async () => {
+      if (hasApiBackend && planningPokerApi) {
+        try {
+          const created = await planningPokerApi.createRoom({
+            sessionName: sessionName.trim(),
+            hostDisplayName: yourName.trim(),
+            hostRole: role,
+            scaleId,
+          });
+
+          const createdMeId = created.hostId ?? created.participants[0]?.id ?? meId;
+          saveRoom(created);
+          sessionStorage.setItem(`pp_me_${created.id}`, createdMeId);
+          sessionStorage.setItem(`pp_me_name_${created.id}`, yourName.trim());
+          sessionStorage.setItem(`pp_me_role_${created.id}`, role);
+          window.location.assign(toAppPath(`room/${created.id}`));
+          return;
+        } catch (error) {
+          console.error('Failed to create room via API backend', error);
+          setError('Unable to create room via backend. Falling back to local mode.');
+        }
+      }
+
+      // Save to Firestore immediately so other browsers can join
       const signedIn = await ensureFirebaseAuth();
       if (signedIn && db) {
         const roomDoc = doc(db, 'planningPokerRooms', roomId);
@@ -88,7 +112,7 @@ export default function HomePage() {
       {/* Hero */}
       <div className="relative z-20 h-full max-w-5xl mx-auto px-5 sm:px-6 py-5 sm:py-7 text-center flex flex-col justify-center">
         <p className="text-xs font-semibold tracking-[0.16em] text-[#367C2B] uppercase mb-4">Agile Estimation Workspace</p>
-        {!hasFirebaseConfig && (
+        {!hasFirebaseConfig && !hasApiBackend && (
           <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             Realtime backend is unavailable in this deployment. Use one browser profile and open room links in additional tabs on the same browser.
           </p>

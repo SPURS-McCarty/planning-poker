@@ -5,6 +5,7 @@ import { loadRoom } from '../utils';
 import type { Room, UserRole } from '../types';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, ensureFirebaseAuth, hasFirebaseConfig } from '../firebase';
+import { hasApiBackend, planningPokerApi } from '../backend/runtime';
 
 const ROOM_COLLECTION = 'planningPokerRooms';
 const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
@@ -54,6 +55,26 @@ export default function JoinPage() {
     };
 
     void (async () => {
+      if (hasApiBackend && planningPokerApi) {
+        try {
+          const apiRoom = await planningPokerApi.getRoom(normalizedRoomId);
+          if (cancelled) return;
+          if (apiRoom) {
+            setRemoteRoom(apiRoom);
+            return;
+          }
+          if (!tryLocalFallback()) {
+            setError('Room not found in backend. Ask the creator to share a fresh link.');
+          }
+          return;
+        } catch {
+          if (!cancelled && !tryLocalFallback()) {
+            setError('Unable to reach backend. Please try again.');
+          }
+          return;
+        }
+      }
+
       if (!hasFirebaseConfig) {
         if (!cancelled && !tryLocalFallback()) {
           setError('Realtime is disabled in this deployment. Open this link in another tab of the same browser profile as the host, or create a new room in this browser.');
