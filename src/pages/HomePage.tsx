@@ -78,7 +78,7 @@ export default function HomePage() {
         <p className="text-xs font-semibold tracking-[0.16em] text-[#367C2B] uppercase mb-4">Agile Estimation Workspace</p>
         <div className="mb-3 inline-flex items-center justify-center gap-3 sm:gap-4">
           <img
-            src="/corner-badge-cutout.png"
+            src={`${import.meta.env.BASE_URL}corner-badge-cutout.png`}
             alt="Planning poker badge"
             className="pointer-events-none select-none w-24 sm:w-28 md:w-32 -rotate-6 mix-blend-multiply contrast-110 saturate-110"
           />
