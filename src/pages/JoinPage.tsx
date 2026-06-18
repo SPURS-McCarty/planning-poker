@@ -25,34 +25,70 @@ export default function JoinPage() {
 
     let cancelled = false;
 
-    void (async () => {
-      // Try Firestore first (with a 3-second timeout)
-      if (db && hasFirebaseConfig) {
-        try {
-          const signedIn = await ensureFirebaseAuth();
-          if (signedIn) {
-            const timeoutPromise = new Promise<null>((resolve) => {
-              setTimeout(() => resolve(null), 3000);
-            });
-            const firestorePromise = getDoc(doc(db, ROOM_COLLECTION, normalizedRoomId));
-            const snapshot = await Promise.race([firestorePromise, timeoutPromise]);
-            if (!cancelled && snapshot && snapshot.exists()) {
-              setRemoteRoom(snapshot.data() as Room);
-              return;
-            }
-          }
-        } catch {
-          // Firestore failed, fall through to localStorage
+    const tryLocalFallback = () => {
+      const localRoom = loadRoom(normalizedRoomId);
+      if (localRoom) {
+        setRemoteRoom(localRoom);
+        return true;
+      }
+      return false;
+    };
+
+    const readFromFirestoreWithRetries = async () => {
+      if (!db) return { status: 'unavailable' as const };
+      const roomDoc = doc(db, ROOM_COLLECTION, normalizedRoomId);
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const timeoutPromise = new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), 5000);
+        });
+        const snapshot = await Promise.race([getDoc(roomDoc), timeoutPromise]);
+        if (snapshot === null) continue;
+        if (snapshot.exists()) {
+          return { status: 'found' as const, room: snapshot.data() as Room };
         }
+        return { status: 'missing' as const };
       }
 
-      // Fallback: try localStorage
-      if (!cancelled) {
-        const localRoom = loadRoom(normalizedRoomId);
-        if (localRoom) {
-          setRemoteRoom(localRoom);
-        } else {
-          setError('Room not found. Ask the creator to share a new link.');
+      return { status: 'timeout' as const };
+    };
+
+    void (async () => {
+      if (!hasFirebaseConfig) {
+        if (!cancelled && !tryLocalFallback()) {
+          setError('Realtime backend is not configured for this deployment. Create a new room or enable Firebase env settings.');
+        }
+        return;
+      }
+
+      try {
+        const signedIn = await ensureFirebaseAuth();
+        if (!signedIn) {
+          if (!cancelled && !tryLocalFallback()) {
+            setError('Unable to authenticate with realtime backend. Confirm Firebase Anonymous Auth is enabled.');
+          }
+          return;
+        }
+
+        const result = await readFromFirestoreWithRetries();
+        if (cancelled) return;
+
+        if (result.status === 'found') {
+          setRemoteRoom(result.room);
+          return;
+        }
+
+        if (tryLocalFallback()) return;
+
+        if (result.status === 'missing') {
+          setError('Room not found in realtime backend. Ask the creator to share a fresh link.');
+          return;
+        }
+
+        setError('Unable to reach realtime backend. Check network access and Firestore rules, then try again.');
+      } catch {
+        if (!cancelled && !tryLocalFallback()) {
+          setError('Unable to reach realtime backend. Check network access and Firestore rules, then try again.');
         }
       }
     })();
