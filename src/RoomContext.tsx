@@ -50,7 +50,7 @@ function revealAndAwardChips(r: Room) {
   r.revealed = true;
 }
 
-const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST ?? 'localhost:1999';
+const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST;
 
 export function RoomProvider({ children }: { children: React.ReactNode }) {
   const [room, setRoom] = useState<Room | null>(null);
@@ -59,6 +59,7 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
   const roomRef = useRef<Room | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasConnectionRef = useRef(false);
+  const shouldUsePartyKit = PARTYKIT_HOST && PARTYKIT_HOST !== 'localhost:1999';
 
   // Keep ref in sync for callbacks
   useEffect(() => { roomRef.current = room; }, [room]);
@@ -92,9 +93,16 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
       pollingRef.current = null;
     }
 
+    // If no PartyKit host configured, use localStorage polling only
+    if (!shouldUsePartyKit) {
+      console.log('PartyKit not configured, using localStorage sync only');
+      startPollingFallback(roomId);
+      return;
+    }
+
     hasConnectionRef.current = false;
     const ws = new PartySocket({
-      host: PARTYKIT_HOST,
+      host: PARTYKIT_HOST!,
       room: roomId,
     });
 
@@ -126,7 +134,7 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
 
   function broadcast(updated: Room) {
     saveRoom(updated); // keep localStorage as local fallback
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
+    if (shouldUsePartyKit && socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'update', room: updated }));
     }
     setRoom({ ...updated });
