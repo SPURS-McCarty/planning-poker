@@ -56,7 +56,7 @@ export default function JoinPage() {
     void (async () => {
       if (!hasFirebaseConfig) {
         if (!cancelled && !tryLocalFallback()) {
-          setError('Realtime backend is not configured for this deployment. Create a new room or enable Firebase env settings.');
+          setError('Realtime is disabled in this deployment. Open this link in another tab of the same browser profile as the host, or create a new room in this browser.');
         }
         return;
       }
