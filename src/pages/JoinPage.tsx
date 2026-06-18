@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useRoom } from '../RoomContext';
 import { loadRoom } from '../utils';
 import type { Room, UserRole } from '../types';
 import PartySocket from 'partysocket';
 
 const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST ?? 'localhost:1999';
+const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 
 export default function JoinPage() {
   const { roomId } = useParams<{ roomId: string }>();
-  const navigate = useNavigate();
   const { joinRoom } = useRoom();
   const [name, setName] = useState('');
   const [role, setRole] = useState<UserRole>('participant');
@@ -38,7 +38,7 @@ export default function JoinPage() {
     if (!roomId) return;
     const ok = joinRoom(roomId, name.trim(), role, remoteRoom ?? undefined);
     if (!ok) { setError('Room not found. Check the link and try again.'); return; }
-    navigate(`/room/${roomId}`);
+    window.location.assign(toAppPath(`room/${roomId}`));
   }
 
   return (
@@ -116,7 +116,7 @@ export default function JoinPage() {
         )}
         {!remoteRoom && (
           <button
-            onClick={() => navigate('/')}
+            onClick={() => window.location.assign(toAppPath(''))}
             className="w-full mt-4 border border-slate-300 text-slate-600 font-semibold py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
           >
             Create a new room

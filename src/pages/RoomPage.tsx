@@ -5,6 +5,7 @@ import { useRoom } from '../RoomContext';
 import { ResultsPanel } from '../components/ResultsPanel';
 import { buildRoomUrl } from '../utils';
 import { Copy, RotateCcw, ArrowLeft, Volume2, VolumeX, Users, Zap, Heart, Star, Eye, Shield, Flame, Wind } from 'lucide-react';
+const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 
 const CHIP_THEMES = [
   { outer: '#122e1b', ring: '#ffde00', inner: '#2f6f2b', icon: '#fff6bf' },
@@ -103,7 +104,7 @@ export default function RoomPage() {
       if (storedName) {
         joinRoom(roomId, storedName, storedRole);
       } else {
-        navigate(`/join/${roomId}`);
+        window.location.assign(toAppPath(`join/${roomId}`));
       }
       return;
     }
@@ -114,7 +115,7 @@ export default function RoomPage() {
       if (storedName) {
         joinRoom(roomId, storedName, storedRole);
       } else {
-        navigate(`/join/${roomId}`);
+        window.location.assign(toAppPath(`join/${roomId}`));
       }
     }
   }, [roomId, room?.id]);
@@ -376,7 +377,7 @@ export default function RoomPage() {
       navigate(-1);
       return;
     }
-    navigate('/');
+    window.location.assign(toAppPath(''));
   }
 
   function openExitPrompt() {
@@ -385,7 +386,7 @@ export default function RoomPage() {
 
   function confirmExit() {
     setExitPromptOpen(false);
-    navigate('/');
+    window.location.assign(toAppPath(''));
   }
 
   return (

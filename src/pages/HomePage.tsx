@@ -1,17 +1,14 @@
-import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { ScalePicker } from '../components/ScalePicker';
 import { BUILT_IN_SCALES } from '../types';
 import type { UserRole } from '../types';
 import { generateId, saveRoom, customScaleFromInput } from '../utils';
-import { useRoom } from '../RoomContext';
 import { FolderPlus, Hand, Users, Eye } from 'lucide-react';
 
 const STEPS = ['Name your session', 'Pick a scale'];
+const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 
 export default function HomePage() {
-  const navigate = useNavigate();
-  const { joinRoom } = useRoom();
   const [step, setStep] = useState(0);
   const [sessionName, setSessionName] = useState('');
   const [yourName, setYourName] = useState('');
@@ -28,7 +25,6 @@ export default function HomePage() {
 
   function handleCreate() {
     if (!sessionName.trim()) { setError('Please enter a session name.'); return; }
-    if (!yourName.trim()) { setError('Please enter your name.'); return; }
 
     const scale =
       scaleId === 'custom'
@@ -41,25 +37,20 @@ export default function HomePage() {
     }
 
     const roomId = generateId();
-    const meId = crypto.randomUUID();
-    const randomIconIndex = Math.floor(Math.random() * 8);
-    const randomChipThemeIndex = Math.floor(Math.random() * 8);
-    
+
     const newRoom = {
       id: roomId,
       sessionName: sessionName.trim(),
-      hostId: meId,
       scale,
-      participants: [{ id: meId, name: yourName.trim(), role, chips: 3, vote: null, hasVoted: false, iconIndex: randomIconIndex, chipThemeIndex: randomChipThemeIndex }],
+      participants: [],
       revealed: false,
       roundNumber: 1,
       autoReveal: false,
       currentIssue: '',
     };
-    
+
     saveRoom(newRoom);
-    joinRoom(roomId, yourName.trim(), role, newRoom);
-    navigate(`/room/${roomId}`);
+    window.location.assign(toAppPath(`join/${roomId}`));
   }
 
   function handleJoinByCode() {
@@ -68,7 +59,7 @@ export default function HomePage() {
       setError('Enter a room code to join an existing session.');
       return;
     }
-    navigate(`/join/${normalized}`);
+    window.location.assign(toAppPath(`join/${normalized}`));
   }
 
   return (
@@ -216,9 +207,8 @@ export default function HomePage() {
                   onClick={() => {
                     setError('');
                     setSessionTouched(true);
-                    setNameTouched(true);
-                    if (!sessionName.trim() || !yourName.trim()) {
-                      setError('Please fill in both fields.');
+                    if (!sessionName.trim()) {
+                      setError('Please enter a session name.');
                       return;
                     }
                     setStep(1);
