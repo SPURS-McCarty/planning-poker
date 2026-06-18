@@ -3,6 +3,7 @@ import type { Room, Participant, UserRole } from './types';
 import { saveRoom, loadRoom, generateParticipantId, getOrCreateClientId } from './utils';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, ensureFirebaseAuth, hasFirebaseConfig } from './firebase';
+import { hasApiBackend, planningPokerApi } from './backend/runtime';
 
 interface RoomCtx {
   room: Room | null;
@@ -18,6 +19,11 @@ interface RoomCtx {
 const Ctx = createContext<RoomCtx | null>(null);
 const CORRECT_GUESS_EXTRA_CHIP = 1;
 const ROOM_COLLECTION = 'planningPokerRooms';
+
+function getRoomVersion(room: Room | null): number {
+  const version = (room as Room & { version?: number } | null)?.version;
+  return typeof version === 'number' && version > 0 ? version : 1;
+}
 
 function revealAndAwardChips(r: Room) {
   if (r.revealed) return;
@@ -88,6 +94,27 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
       unsubscribeRef.current = null;
     }
 
+    if (hasApiBackend && planningPokerApi) {
+      const api = planningPokerApi;
+      const pollApiRoom = async () => {
+        try {
+          const nextRoom = await api.getRoom(roomId);
+          if (nextRoom) {
+            setRoom(nextRoom);
+            saveRoom(nextRoom);
+          }
+        } catch (error) {
+          console.error('API room polling failed', error);
+        }
+      };
+
+      await pollApiRoom();
+      pollingRef.current = setInterval(() => {
+        void pollApiRoom();
+      }, 1000);
+      return;
+    }
+
     if (!hasRealtime || !db) {
       console.log('Firebase not configured, using localStorage sync only');
       startPollingFallback(roomId);
@@ -120,6 +147,11 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
 
   function broadcast(updated: Room) {
     saveRoom(updated); // keep localStorage as local fallback
+    if (hasApiBackend && planningPokerApi) {
+      setRoom({ ...updated });
+      return;
+    }
+
     if (hasRealtime && db) {
       void (async () => {
         const signedIn = await ensureFirebaseAuth();
@@ -232,7 +264,28 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     }
     
     connectToRoom(roomId);
-    broadcast(r);
+    if (hasApiBackend && planningPokerApi && participantId) {
+      saveRoom(r);
+      setRoom({ ...r });
+      void planningPokerApi
+        .joinParticipant({
+          roomId,
+          expectedVersion: getRoomVersion(r),
+          clientId,
+          displayName: name,
+          role,
+        })
+        .then((nextRoom) => {
+          saveRoom(nextRoom);
+          setRoom(nextRoom);
+        })
+        .catch((error) => {
+          console.error('Failed to join participant via API backend', error);
+        });
+    } else {
+      broadcast(r);
+    }
+
     if (participantId) {
       sessionStorage.setItem(`pp_me_${roomId}`, participantId);
       sessionStorage.setItem(`pp_me_name_${roomId}`, name);
@@ -246,6 +299,25 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     if (!room || !meId) return;
     const activeMe = room.participants.find((p) => p.id === meId);
     if (!activeMe || (activeMe.role ?? 'participant') !== 'participant') return;
+
+    if (hasApiBackend && planningPokerApi) {
+      void planningPokerApi
+        .castVote({
+          roomId: room.id,
+          expectedVersion: getRoomVersion(room),
+          participantId: meId,
+          card,
+        })
+        .then((nextRoom) => {
+          saveRoom(nextRoom);
+          setRoom(nextRoom);
+        })
+        .catch((error) => {
+          console.error('Failed to cast vote via API backend', error);
+        });
+      return;
+    }
+
     const r = { ...room };
     r.participants = r.participants.map((p) =>
       p.id === meId ? { ...p, vote: card, hasVoted: true } : p
@@ -265,12 +337,50 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     const meParticipant = r.participants.find((p) => p.id === meId);
     const isObserver = (meParticipant?.role ?? 'participant') === 'observer';
     if (!isObserver && (!hostParticipantId || meId !== hostParticipantId)) return;
+
+    if (hasApiBackend && planningPokerApi) {
+      void planningPokerApi
+        .reveal({
+          roomId: room.id,
+          expectedVersion: getRoomVersion(room),
+          requestedByParticipantId: meId,
+        })
+        .then((nextRoom) => {
+          saveRoom(nextRoom);
+          setRoom(nextRoom);
+        })
+        .catch((error) => {
+          console.error('Failed to reveal via API backend', error);
+        });
+      return;
+    }
+
     revealAndAwardChips(r);
     broadcast(r);
   }, [room, meId]);
 
   const resetVotes = useCallback(() => {
     if (!room) return;
+
+    if (hasApiBackend && planningPokerApi) {
+      const hostParticipantId = room.hostId ?? room.participants[0]?.id;
+      if (!hostParticipantId) return;
+      void planningPokerApi
+        .reset({
+          roomId: room.id,
+          expectedVersion: getRoomVersion(room),
+          requestedByParticipantId: hostParticipantId,
+        })
+        .then((nextRoom) => {
+          saveRoom(nextRoom);
+          setRoom(nextRoom);
+        })
+        .catch((error) => {
+          console.error('Failed to reset via API backend', error);
+        });
+      return;
+    }
+
     const r = { ...room };
     r.revealed = false;
     r.participants = r.participants.map((p) => ({ ...p, vote: null, hasVoted: false }));
@@ -280,12 +390,48 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
 
   const setAutoReveal = useCallback((enabled: boolean) => {
     if (!room) return;
+
+    if (hasApiBackend && planningPokerApi) {
+      void planningPokerApi
+        .patchRoom({
+          roomId: room.id,
+          expectedVersion: getRoomVersion(room),
+          ops: [{ op: 'setAutoReveal', value: enabled }],
+        })
+        .then((nextRoom) => {
+          saveRoom(nextRoom);
+          setRoom(nextRoom);
+        })
+        .catch((error) => {
+          console.error('Failed to update auto-reveal via API backend', error);
+        });
+      return;
+    }
+
     const r = { ...room, autoReveal: enabled };
     broadcast(r);
   }, [room]);
 
   const updateIssue = useCallback((issue: string) => {
     if (!room) return;
+
+    if (hasApiBackend && planningPokerApi) {
+      void planningPokerApi
+        .patchRoom({
+          roomId: room.id,
+          expectedVersion: getRoomVersion(room),
+          ops: [{ op: 'setIssue', value: issue }],
+        })
+        .then((nextRoom) => {
+          saveRoom(nextRoom);
+          setRoom(nextRoom);
+        })
+        .catch((error) => {
+          console.error('Failed to update issue via API backend', error);
+        });
+      return;
+    }
+
     const r = { ...room, currentIssue: issue };
     broadcast(r);
   }, [room]);
