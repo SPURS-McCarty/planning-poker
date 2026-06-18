@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { Room, Participant, UserRole } from './types';
-import { saveRoom, generateParticipantId } from './utils';
+import { saveRoom, loadRoom, generateParticipantId } from './utils';
 import PartySocket from 'partysocket';
 
 interface RoomCtx {
@@ -141,10 +141,31 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
   }
 
   const joinRoom = useCallback((roomId: string, name: string, role: UserRole = 'participant', initialRoom?: Room): boolean => {
-    const r = initialRoom ?? null;
-    if (!r) return false;
+    const sourceRoom =
+      initialRoom ??
+      loadRoom(roomId) ??
+      (roomRef.current?.id === roomId ? roomRef.current : null);
+    if (!sourceRoom) return false;
+
+    const r: Room = {
+      ...sourceRoom,
+      participants: [...(sourceRoom.participants ?? [])],
+    };
+
     let participantId: string | null = sessionStorage.getItem(`pp_me_${roomId}`);
     let me = r.participants.find((p) => p.id === participantId);
+
+    // If browser storage was cleared, recover existing identity by name/role
+    if (!me) {
+      const normalizedName = name.trim().toLowerCase();
+      me = r.participants.find(
+        (p) => p.name.trim().toLowerCase() === normalizedName && (p.role ?? 'participant') === role,
+      );
+      if (me) {
+        participantId = me.id;
+      }
+    }
+
     if (!me) {
       participantId = generateParticipantId();
       const randomIconIndex = Math.floor(Math.random() * 8);
@@ -167,6 +188,18 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     } else {
       // For ongoing sessions, preserve chips but ensure minimum of 3
       r.participants = r.participants.map((p) => ({ ...p, chips: Math.max(3, p.chips ?? 3) }));
+    }
+
+    // Keep participant list stable if rapid join events occur.
+    const seenParticipantIds = new Set<string>();
+    r.participants = r.participants.filter((p) => {
+      if (seenParticipantIds.has(p.id)) return false;
+      seenParticipantIds.add(p.id);
+      return true;
+    });
+
+    if (!r.hostId && r.participants.length > 0) {
+      r.hostId = r.participants[0].id;
     }
     
     connectToRoom(roomId);
