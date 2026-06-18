@@ -6,7 +6,7 @@ import RoomPage from './pages/RoomPage';
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <RoomProvider>
         <Routes>
           <Route path="/" element={<HomePage />} />
