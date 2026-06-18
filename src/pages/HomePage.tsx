@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ScalePicker } from '../components/ScalePicker';
 import { BUILT_IN_SCALES } from '../types';
 import type { UserRole } from '../types';
-import { generateId, saveRoom, customScaleFromInput } from '../utils';
+import { generateId, saveRoom, generateParticipantId, customScaleFromInput } from '../utils';
 import { FolderPlus, Hand, Users, Eye } from 'lucide-react';
 
 const STEPS = ['Name your session', 'Pick a scale'];
@@ -25,6 +25,7 @@ export default function HomePage() {
 
   function handleCreate() {
     if (!sessionName.trim()) { setError('Please enter a session name.'); return; }
+    if (!yourName.trim()) { setNameTouched(true); setError('Please enter your name.'); return; }
 
     const scale =
       scaleId === 'custom'
@@ -37,12 +38,16 @@ export default function HomePage() {
     }
 
     const roomId = generateId();
+    const meId = generateParticipantId();
+    const randomIconIndex = Math.floor(Math.random() * 8);
+    const randomChipThemeIndex = Math.floor(Math.random() * 8);
 
     const newRoom = {
       id: roomId,
       sessionName: sessionName.trim(),
+      hostId: meId,
       scale,
-      participants: [],
+      participants: [{ id: meId, name: yourName.trim(), role, chips: 3, vote: null, hasVoted: false, iconIndex: randomIconIndex, chipThemeIndex: randomChipThemeIndex }],
       revealed: false,
       roundNumber: 1,
       autoReveal: false,
@@ -50,7 +55,10 @@ export default function HomePage() {
     };
 
     saveRoom(newRoom);
-    window.location.assign(toAppPath(`join/${roomId}`));
+    sessionStorage.setItem(`pp_me_${roomId}`, meId);
+    sessionStorage.setItem(`pp_me_name_${roomId}`, yourName.trim());
+    sessionStorage.setItem(`pp_me_role_${roomId}`, role);
+    window.location.assign(toAppPath(`room/${roomId}`));
   }
 
   function handleJoinByCode() {
