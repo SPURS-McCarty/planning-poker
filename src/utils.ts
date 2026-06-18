@@ -36,6 +36,14 @@ export function generateParticipantId(): string {
   return crypto.randomUUID();
 }
 
+export function getOrCreateClientId(): string {
+  const existing = localStorage.getItem('pp_client_id');
+  if (existing) return existing;
+  const next = crypto.randomUUID();
+  localStorage.setItem('pp_client_id', next);
+  return next;
+}
+
 export function calcAverage(votes: string[]): string {
   const numeric = votes.map(Number).filter((n) => !isNaN(n));
   if (numeric.length === 0) return '—';

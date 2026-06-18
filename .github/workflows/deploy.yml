@@ -15,37 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy-partykit:
-    runs-on: ubuntu-latest
-    # Only runs when PARTYKIT_TOKEN secret is present
-    if: ${{ vars.PARTYKIT_DEPLOY == 'true' }}
-    outputs:
-      partykit_host: ${{ steps.pk_deploy.outputs.partykit_host }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - run: npm ci
-
-      - name: Deploy PartyKit server
-        id: pk_deploy
-        run: |
-          OUTPUT=$(npx partykit deploy --config partykit.json 2>&1)
-          echo "$OUTPUT"
-          HOST=$(echo "$OUTPUT" | grep -oP '[\w-]+\.[\w-]+\.partykit\.dev' | head -1)
-          echo "partykit_host=$HOST" >> $GITHUB_OUTPUT
-        env:
-          PARTYKIT_TOKEN: ${{ secrets.PARTYKIT_TOKEN }}
-          PARTYKIT_LOGIN: ${{ secrets.PARTYKIT_LOGIN }}
-
   build:
     runs-on: ubuntu-latest
-    needs: [deploy-partykit]
-    if: always()
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +31,8 @@ jobs:
         run: npm run build
         env:
           GITHUB_ACTIONS: true
-          VITE_PARTYKIT_HOST: ${{ needs.deploy-partykit.outputs.partykit_host || secrets.VITE_PARTYKIT_HOST }}
+          VITE_PUBNUB_PUBLISH_KEY: ${{ secrets.VITE_PUBNUB_PUBLISH_KEY }}
+          VITE_PUBNUB_SUBSCRIBE_KEY: ${{ secrets.VITE_PUBNUB_SUBSCRIBE_KEY }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

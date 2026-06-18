@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { Room, Participant, UserRole } from './types';
-import { saveRoom, loadRoom, generateParticipantId } from './utils';
-import PartySocket from 'partysocket';
+import { saveRoom, loadRoom, generateParticipantId, getOrCreateClientId } from './utils';
+import PubNub from 'pubnub';
 
 interface RoomCtx {
   room: Room | null;
@@ -50,24 +50,20 @@ function revealAndAwardChips(r: Room) {
   r.revealed = true;
 }
 
-const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST;
+const PUBNUB_PUBLISH_KEY = import.meta.env.VITE_PUBNUB_PUBLISH_KEY;
+const PUBNUB_SUBSCRIBE_KEY = import.meta.env.VITE_PUBNUB_SUBSCRIBE_KEY;
+const HAS_PUBNUB = Boolean(PUBNUB_PUBLISH_KEY && PUBNUB_SUBSCRIBE_KEY);
+
+type RoomMessage = { type: 'room_state'; room: Room };
 
 export function RoomProvider({ children }: { children: React.ReactNode }) {
   const [room, setRoom] = useState<Room | null>(null);
   const [meId, setMeId] = useState<string | null>(null);
-  const socketRef = useRef<PartySocket | null>(null);
+  const pubnubRef = useRef<PubNub | null>(null);
+  const channelRef = useRef<string | null>(null);
   const roomRef = useRef<Room | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hasConnectionRef = useRef(false);
-  const shouldUsePartyKit = PARTYKIT_HOST && PARTYKIT_HOST !== 'localhost:1999';
-
-  function getOrCreateClientId(): string {
-    const existing = localStorage.getItem('pp_client_id');
-    if (existing) return existing;
-    const next = crypto.randomUUID();
-    localStorage.setItem('pp_client_id', next);
-    return next;
-  }
+  const hasRealtime = HAS_PUBNUB;
 
   // Keep ref in sync for callbacks
   useEffect(() => { roomRef.current = room; }, [room]);
@@ -90,60 +86,64 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     }, 1000);
   }
 
+  function getPubNubClient() {
+    if (!hasRealtime) return null;
+    if (pubnubRef.current) return pubnubRef.current;
+
+    const client = new PubNub({
+      publishKey: PUBNUB_PUBLISH_KEY!,
+      subscribeKey: PUBNUB_SUBSCRIBE_KEY!,
+      userId: getOrCreateClientId(),
+      restore: true,
+    });
+
+    client.addListener({
+      message: (event) => {
+        if (event.channel !== channelRef.current) return;
+        try {
+          const message = JSON.parse(String(event.message)) as RoomMessage;
+          if (message.type === 'room_state' && message.room) {
+            setRoom(message.room);
+          }
+        } catch {
+          // Ignore malformed messages.
+        }
+      },
+    });
+
+    pubnubRef.current = client;
+    return client;
+  }
+
   function connectToRoom(roomId: string) {
-    // Close existing socket if switching rooms
-    if (socketRef.current) {
-      socketRef.current.close();
-      socketRef.current = null;
-    }
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
 
-    // If no PartyKit host configured, use localStorage polling only
-    if (!shouldUsePartyKit) {
-      console.log('PartyKit not configured, using localStorage sync only');
+    const client = getPubNubClient();
+    if (!client) {
+      console.log('PubNub not configured, using localStorage sync only');
       startPollingFallback(roomId);
       return;
     }
 
-    hasConnectionRef.current = false;
-    const ws = new PartySocket({
-      host: PARTYKIT_HOST!,
-      room: roomId,
-    });
+    if (channelRef.current && channelRef.current !== roomId) {
+      client.unsubscribe({ channels: [channelRef.current] });
+    }
 
-    ws.onopen = () => {
-      hasConnectionRef.current = true;
-      console.log('Connected to PartyKit');
-    };
-
-    ws.onmessage = (evt) => {
-      const msg = JSON.parse(evt.data) as { type: string; room?: Room };
-      if (msg.type === 'room_state' && msg.room) {
-        setRoom(msg.room);
-      }
-    };
-
-    ws.onerror = (err) => {
-      console.warn('PartyKit connection error, falling back to localStorage polling', err);
-      startPollingFallback(roomId);
-    };
-
-    ws.onclose = () => {
-      console.warn('PartyKit disconnected, falling back to localStorage polling');
-      hasConnectionRef.current = false;
-      startPollingFallback(roomId);
-    };
-
-    socketRef.current = ws;
+    channelRef.current = roomId;
+    client.subscribe({ channels: [roomId] });
   }
 
   function broadcast(updated: Room) {
     saveRoom(updated); // keep localStorage as local fallback
-    if (shouldUsePartyKit && socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: 'update', room: updated }));
+    const client = getPubNubClient();
+    if (client && channelRef.current) {
+      void client.publish({
+        channel: channelRef.current,
+        message: JSON.stringify({ type: 'room_state', room: updated }),
+      });
     }
     setRoom({ ...updated });
   }

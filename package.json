@@ -15,6 +15,8 @@
     "lucide-react": "^1.18.0",
     "partysocket": "^1.2.0",
     "pdf-parse": "^2.4.5",
+    "pubnub": "^11.0.2",
+    "pusher-js": "^8.5.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.17.0",
