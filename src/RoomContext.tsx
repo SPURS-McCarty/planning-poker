@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { Room, Participant, UserRole } from './types';
 import { saveRoom, loadRoom, generateParticipantId, getOrCreateClientId } from './utils';
-import PubNub from 'pubnub';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db, hasFirebaseConfig } from './firebase';
 
 interface RoomCtx {
   room: Room | null;
@@ -16,6 +17,7 @@ interface RoomCtx {
 
 const Ctx = createContext<RoomCtx | null>(null);
 const CORRECT_GUESS_EXTRA_CHIP = 1;
+const ROOM_COLLECTION = 'planningPokerRooms';
 
 function revealAndAwardChips(r: Room) {
   if (r.revealed) return;
@@ -50,20 +52,13 @@ function revealAndAwardChips(r: Room) {
   r.revealed = true;
 }
 
-const PUBNUB_PUBLISH_KEY = import.meta.env.VITE_PUBNUB_PUBLISH_KEY;
-const PUBNUB_SUBSCRIBE_KEY = import.meta.env.VITE_PUBNUB_SUBSCRIBE_KEY;
-const HAS_PUBNUB = Boolean(PUBNUB_PUBLISH_KEY && PUBNUB_SUBSCRIBE_KEY);
-
-type RoomMessage = { type: 'room_state'; room: Room };
-
 export function RoomProvider({ children }: { children: React.ReactNode }) {
   const [room, setRoom] = useState<Room | null>(null);
   const [meId, setMeId] = useState<string | null>(null);
-  const pubnubRef = useRef<PubNub | null>(null);
-  const channelRef = useRef<string | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
   const roomRef = useRef<Room | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hasRealtime = HAS_PUBNUB;
+  const hasRealtime = Boolean(db && hasFirebaseConfig);
 
   // Keep ref in sync for callbacks
   useEffect(() => { roomRef.current = room; }, [room]);
@@ -86,67 +81,51 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     }, 1000);
   }
 
-  function getPubNubClient() {
-    if (!hasRealtime) return null;
-    if (pubnubRef.current) return pubnubRef.current;
-
-    const client = new PubNub({
-      publishKey: PUBNUB_PUBLISH_KEY!,
-      subscribeKey: PUBNUB_SUBSCRIBE_KEY!,
-      userId: getOrCreateClientId(),
-      restore: true,
-    });
-
-    client.addListener({
-      message: (event) => {
-        if (event.channel !== channelRef.current) return;
-        try {
-          const message = JSON.parse(String(event.message)) as RoomMessage;
-          if (message.type === 'room_state' && message.room) {
-            setRoom(message.room);
-          }
-        } catch {
-          // Ignore malformed messages.
-        }
-      },
-    });
-
-    pubnubRef.current = client;
-    return client;
-  }
-
   function connectToRoom(roomId: string) {
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
 
-    const client = getPubNubClient();
-    if (!client) {
-      console.log('PubNub not configured, using localStorage sync only');
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
+
+    if (!hasRealtime || !db) {
+      console.log('Firebase not configured, using localStorage sync only');
       startPollingFallback(roomId);
       return;
     }
 
-    if (channelRef.current && channelRef.current !== roomId) {
-      client.unsubscribe({ channels: [channelRef.current] });
-    }
-
-    channelRef.current = roomId;
-    client.subscribe({ channels: [roomId] });
+    const roomDoc = doc(db, ROOM_COLLECTION, roomId);
+    unsubscribeRef.current = onSnapshot(roomDoc, (snapshot) => {
+      if (!snapshot.exists()) return;
+      const nextRoom = snapshot.data() as Room;
+      setRoom(nextRoom);
+      saveRoom(nextRoom);
+    });
   }
 
   function broadcast(updated: Room) {
     saveRoom(updated); // keep localStorage as local fallback
-    const client = getPubNubClient();
-    if (client && channelRef.current) {
-      void client.publish({
-        channel: channelRef.current,
-        message: JSON.stringify({ type: 'room_state', room: updated }),
-      });
+    if (hasRealtime && db) {
+      const roomDoc = doc(db, ROOM_COLLECTION, updated.id);
+      void setDoc(roomDoc, updated, { merge: true });
     }
     setRoom({ ...updated });
   }
+
+  useEffect(() => {
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, []);
 
   const joinRoom = useCallback((roomId: string, name: string, role: UserRole = 'participant', initialRoom?: Room): boolean => {
     const sourceRoom =

@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useRoom } from '../RoomContext';
-import { loadRoom, getOrCreateClientId } from '../utils';
+import { loadRoom } from '../utils';
 import type { Room, UserRole } from '../types';
-import PubNub from 'pubnub';
+import { doc, getDoc } from 'firebase/firestore';
+import { db, hasFirebaseConfig } from '../firebase';
 
-const PUBNUB_PUBLISH_KEY = import.meta.env.VITE_PUBNUB_PUBLISH_KEY;
-const PUBNUB_SUBSCRIBE_KEY = import.meta.env.VITE_PUBNUB_SUBSCRIBE_KEY;
-const HAS_PUBNUB = Boolean(PUBNUB_PUBLISH_KEY && PUBNUB_SUBSCRIBE_KEY);
+const ROOM_COLLECTION = 'planningPokerRooms';
 const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 
 export default function JoinPage() {
@@ -19,36 +18,23 @@ export default function JoinPage() {
   const [error, setError] = useState('');
   const [remoteRoom, setRemoteRoom] = useState<Room | null>(() => roomId ? loadRoom(roomId) : null);
 
-  // Fetch room state from PartyKit if not in localStorage
+  // Fetch room state from Firestore if not in localStorage
   useEffect(() => {
-    if (!roomId || remoteRoom || !HAS_PUBNUB) return;
+    if (!roomId || remoteRoom || !db || !hasFirebaseConfig) return;
 
-    const client = new PubNub({
-      publishKey: PUBNUB_PUBLISH_KEY!,
-      subscribeKey: PUBNUB_SUBSCRIBE_KEY!,
-      userId: getOrCreateClientId(),
-    });
+    let cancelled = false;
 
-    client.addListener({
-      message: (event) => {
-        try {
-          const msg = JSON.parse(String(event.message)) as { type: string; room?: Room };
-          if (event.channel === roomId && msg.type === 'room_state' && msg.room) {
-            setRemoteRoom(msg.room);
-            client.unsubscribeAll();
-          }
-        } catch {
-          // Ignore malformed messages.
-        }
-      },
-    });
+    void (async () => {
+      const snapshot = await getDoc(doc(db, ROOM_COLLECTION, roomId));
+      if (!cancelled && snapshot.exists()) {
+        setRemoteRoom(snapshot.data() as Room);
+      }
+    })();
 
-    client.subscribe({ channels: [roomId] });
-
-    // Timeout — room genuinely doesn't exist
-    const t = setTimeout(() => client.unsubscribeAll(), 5000);
-    return () => { clearTimeout(t); client.unsubscribeAll(); };
-  }, [roomId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId, remoteRoom]);
 
   function handleJoin() {
     if (!name.trim()) { setNameTouched(true); setError('Please enter your name.'); return; }
