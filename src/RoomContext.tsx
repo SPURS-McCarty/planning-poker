@@ -57,9 +57,29 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
   const [meId, setMeId] = useState<string | null>(null);
   const socketRef = useRef<PartySocket | null>(null);
   const roomRef = useRef<Room | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasConnectionRef = useRef(false);
 
   // Keep ref in sync for callbacks
   useEffect(() => { roomRef.current = room; }, [room]);
+
+  function startPollingFallback(roomId: string) {
+    // Stop existing polling
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    
+    // Poll localStorage every 1s as fallback
+    pollingRef.current = setInterval(() => {
+      const stored = localStorage.getItem(`room_${roomId}`);
+      if (stored) {
+        try {
+          const r = JSON.parse(stored) as Room;
+          setRoom(r);
+        } catch (e) {
+          console.error('Failed to parse stored room', e);
+        }
+      }
+    }, 1000);
+  }
 
   function connectToRoom(roomId: string) {
     // Close existing socket if switching rooms
@@ -67,29 +87,55 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
       socketRef.current.close();
       socketRef.current = null;
     }
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    hasConnectionRef.current = false;
     const ws = new PartySocket({
       host: PARTYKIT_HOST,
       room: roomId,
     });
+
+    ws.onopen = () => {
+      hasConnectionRef.current = true;
+      console.log('Connected to PartyKit');
+    };
+
     ws.onmessage = (evt) => {
       const msg = JSON.parse(evt.data) as { type: string; room?: Room };
       if (msg.type === 'room_state' && msg.room) {
         setRoom(msg.room);
       }
     };
+
+    ws.onerror = (err) => {
+      console.warn('PartyKit connection error, falling back to localStorage polling', err);
+      startPollingFallback(roomId);
+    };
+
+    ws.onclose = () => {
+      console.warn('PartyKit disconnected, falling back to localStorage polling');
+      hasConnectionRef.current = false;
+      startPollingFallback(roomId);
+    };
+
     socketRef.current = ws;
   }
 
   function broadcast(updated: Room) {
     saveRoom(updated); // keep localStorage as local fallback
-    socketRef.current?.send(JSON.stringify({ type: 'update', room: updated }));
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'update', room: updated }));
+    }
     setRoom({ ...updated });
   }
 
   const joinRoom = useCallback((roomId: string, name: string, role: UserRole = 'participant', initialRoom?: Room): boolean => {
     const r = initialRoom ?? null;
     if (!r) return false;
-    let participantId = sessionStorage.getItem(`pp_me_${roomId}`);
+    let participantId: string | null = sessionStorage.getItem(`pp_me_${roomId}`);
     let me = r.participants.find((p) => p.id === participantId);
     if (!me) {
       participantId = generateParticipantId();
@@ -117,11 +163,13 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     
     connectToRoom(roomId);
     broadcast(r);
-    sessionStorage.setItem(`pp_me_${roomId}`, participantId);
-    sessionStorage.setItem(`pp_me_name_${roomId}`, name);
-    sessionStorage.setItem(`pp_me_role_${roomId}`, role);
-    setMeId(participantId);
-    return true;
+    if (participantId) {
+      sessionStorage.setItem(`pp_me_${roomId}`, participantId);
+      sessionStorage.setItem(`pp_me_name_${roomId}`, name);
+      sessionStorage.setItem(`pp_me_role_${roomId}`, role);
+      setMeId(participantId);
+    }
+    return !!participantId;
   }, []);
 
   const vote = useCallback((card: string) => {

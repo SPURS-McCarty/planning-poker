@@ -302,7 +302,6 @@ export default function RoomPage() {
     : votes.length === 0
       ? 'Cast at least one vote to enable reveal.'
       : null;
-  const allVoted = participantsOnly.length > 0 && participantsOnly.every((p) => p.hasVoted);
   const readyCount = participantsOnly.filter((p) => p.hasVoted).length;
   const votedParticipants = participantsOnly.filter((p) => p.hasVoted && p.vote !== null);
   const meParticipant = room.participants.find((p) => p.id === me?.id) ?? null;

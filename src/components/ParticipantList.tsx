@@ -60,7 +60,7 @@ function chipThemeIndexForParticipant(id: string, rosterIds?: string[]) {
   return hashFromId(id) % CHIP_THEME_COUNT;
 }
 
-export function ParticipantList({ participants, revealed }: Props) {
+export function ParticipantList({ participants }: Props) {
   const rosterIds = participants.map((p) => p.id);
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5">
