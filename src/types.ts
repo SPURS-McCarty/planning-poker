@@ -10,6 +10,7 @@ export interface Scale {
 
 export interface Participant {
   id: string;
+  clientId?: string;
   name: string;
   role?: UserRole;
   chips: number;

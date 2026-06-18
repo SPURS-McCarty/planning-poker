@@ -61,6 +61,14 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
   const hasConnectionRef = useRef(false);
   const shouldUsePartyKit = PARTYKIT_HOST && PARTYKIT_HOST !== 'localhost:1999';
 
+  function getOrCreateClientId(): string {
+    const existing = localStorage.getItem('pp_client_id');
+    if (existing) return existing;
+    const next = crypto.randomUUID();
+    localStorage.setItem('pp_client_id', next);
+    return next;
+  }
+
   // Keep ref in sync for callbacks
   useEffect(() => { roomRef.current = room; }, [room]);
 
@@ -152,8 +160,17 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
       participants: [...(sourceRoom.participants ?? [])],
     };
 
+    const clientId = getOrCreateClientId();
+
     let participantId: string | null = sessionStorage.getItem(`pp_me_${roomId}`);
     let me = r.participants.find((p) => p.id === participantId);
+
+    if (!me) {
+      me = r.participants.find((p) => p.clientId === clientId);
+      if (me) {
+        participantId = me.id;
+      }
+    }
 
     // If browser storage was cleared, recover existing identity by name/role
     if (!me) {
@@ -170,11 +187,12 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
       participantId = generateParticipantId();
       const randomIconIndex = Math.floor(Math.random() * 8);
       const randomChipThemeIndex = Math.floor(Math.random() * 8);
-      me = { id: participantId, name, role, chips: 3, vote: null, hasVoted: false, iconIndex: randomIconIndex, chipThemeIndex: randomChipThemeIndex };
+      me = { id: participantId, clientId, name, role, chips: 3, vote: null, hasVoted: false, iconIndex: randomIconIndex, chipThemeIndex: randomChipThemeIndex };
       r.participants.push(me);
-    } else if (me.name !== name || (me.role ?? 'participant') !== role) {
+    } else if (me.name !== name || (me.role ?? 'participant') !== role || me.clientId !== clientId) {
       me.name = name;
       me.role = role;
+      me.clientId = clientId;
     }
     
     // For fresh sessions (just created), always ensure participant has 3 chips
@@ -195,6 +213,16 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     r.participants = r.participants.filter((p) => {
       if (seenParticipantIds.has(p.id)) return false;
       seenParticipantIds.add(p.id);
+      return true;
+    });
+
+    // Ensure this browser has exactly one participant row in the room.
+    const seenClient = new Set<string>();
+    r.participants = r.participants.filter((p) => {
+      if (!p.clientId) return true;
+      if (p.clientId !== clientId) return true;
+      if (seenClient.has(p.clientId)) return false;
+      seenClient.add(p.clientId);
       return true;
     });
 
