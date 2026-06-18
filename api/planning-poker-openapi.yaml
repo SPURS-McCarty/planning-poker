@@ -1,0 +1,242 @@
+openapi: 3.0.3
+info:
+  title: Planning Poker API
+  version: 1.0.0
+  description: Deere internal API contract for room state sync
+servers:
+  - url: https://api.deere.internal
+security:
+  - bearerAuth: []
+
+paths:
+  /v1/planning-poker/rooms:
+    post:
+      summary: Create room
+      parameters:
+        - in: header
+          name: x-correlation-id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionName, hostDisplayName, hostRole, scaleId]
+              properties:
+                sessionName: { type: string }
+                hostDisplayName: { type: string }
+                hostRole: { type: string, enum: [participant, observer] }
+                scaleId: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+
+  /v1/planning-poker/rooms/{roomId}:
+    get:
+      summary: Get room by id
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - in: header
+          name: x-correlation-id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+        '404':
+          description: Not found
+    patch:
+      summary: Patch room state
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - in: header
+          name: x-correlation-id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, ops]
+              properties:
+                expectedVersion:
+                  type: integer
+                ops:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+        '409':
+          description: Version conflict
+
+  /v1/planning-poker/rooms/{roomId}/participants:
+    post:
+      summary: Join participant
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId, displayName, role, expectedVersion]
+              properties:
+                clientId: { type: string }
+                displayName: { type: string }
+                role: { type: string, enum: [participant, observer] }
+                expectedVersion: { type: integer }
+      responses:
+        '200':
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+
+  /v1/planning-poker/rooms/{roomId}/votes:
+    post:
+      summary: Cast vote
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [participantId, card, expectedVersion]
+              properties:
+                participantId: { type: string }
+                card: { type: string }
+                expectedVersion: { type: integer }
+      responses:
+        '200':
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+
+  /v1/planning-poker/rooms/{roomId}/reveal:
+    post:
+      summary: Reveal votes
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestedByParticipantId, expectedVersion]
+              properties:
+                requestedByParticipantId: { type: string }
+                expectedVersion: { type: integer }
+      responses:
+        '200':
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+        '403':
+          description: Forbidden
+
+  /v1/planning-poker/rooms/{roomId}/reset:
+    post:
+      summary: Reset round
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestedByParticipantId, expectedVersion]
+              properties:
+                requestedByParticipantId: { type: string }
+                expectedVersion: { type: integer }
+      responses:
+        '200':
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    RoomId:
+      in: path
+      name: roomId
+      required: true
+      schema:
+        type: string
+  schemas:
+    Participant:
+      type: object
+      required: [id, name, chips, hasVoted]
+      properties:
+        id: { type: string }
+        clientId: { type: string }
+        name: { type: string }
+        role: { type: string }
+        chips: { type: integer }
+        vote: { type: string, nullable: true }
+        hasVoted: { type: boolean }
+    Scale:
+      type: object
+      required: [id, name, cards]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        cards:
+          type: array
+          items: { type: string }
+    Room:
+      type: object
+      required: [id, sessionName, scale, participants, revealed, currentIssue, version, updatedAt]
+      properties:
+        id: { type: string }
+        sessionName: { type: string }
+        hostId: { type: string }
+        scale:
+          $ref: '#/components/schemas/Scale'
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Participant'
+        revealed: { type: boolean }
+        roundNumber: { type: integer }
+        autoReveal: { type: boolean }
+        currentIssue: { type: string }
+        version: { type: integer }
+        updatedAt: { type: string, format: date-time }
