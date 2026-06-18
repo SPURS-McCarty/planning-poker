@@ -299,9 +299,7 @@ export default function RoomPage() {
   const votes = participantsOnly.filter((p) => p.vote !== null).map((p) => p.vote as string);
   const revealDisabledReason = !canRevealCards
     ? 'Only the session creator or observers can reveal cards.'
-    : votes.length === 0
-      ? 'Cast at least one vote to enable reveal.'
-      : null;
+    : null;
   const readyCount = participantsOnly.filter((p) => p.hasVoted).length;
   const votedParticipants = participantsOnly.filter((p) => p.hasVoted && p.vote !== null);
   const meParticipant = room.participants.find((p) => p.id === me?.id) ?? null;
