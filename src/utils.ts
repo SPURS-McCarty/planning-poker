@@ -51,7 +51,9 @@ export function voteDistribution(votes: string[]): Record<string, number> {
 }
 
 export function buildRoomUrl(roomId: string): string {
-  return `${window.location.origin}/room/${roomId}`;
+  const base = import.meta.env.BASE_URL || '/';
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  return `${window.location.origin}${normalizedBase}room/${roomId}`;
 }
 
 export function customScaleFromInput(raw: string): Scale {
