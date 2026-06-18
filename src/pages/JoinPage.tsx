@@ -20,25 +20,38 @@ export default function JoinPage() {
 
   // Fetch room state from Firestore if not in localStorage
   useEffect(() => {
-    if (!roomId || remoteRoom || !db || !hasFirebaseConfig) return;
+    if (!roomId || remoteRoom) return;
 
     let cancelled = false;
 
     void (async () => {
-      try {
-        const signedIn = await ensureFirebaseAuth();
-        if (!signedIn) {
-          if (!cancelled) setError('Realtime connection unavailable. Check Firebase auth settings.');
-          return;
+      // Try Firestore first (with a 3-second timeout)
+      if (db && hasFirebaseConfig) {
+        try {
+          const signedIn = await ensureFirebaseAuth();
+          if (signedIn) {
+            const timeoutPromise = new Promise<null>((resolve) => {
+              setTimeout(() => resolve(null), 3000);
+            });
+            const firestorePromise = getDoc(doc(db, ROOM_COLLECTION, roomId));
+            const snapshot = await Promise.race([firestorePromise, timeoutPromise]);
+            if (!cancelled && snapshot && snapshot.exists()) {
+              setRemoteRoom(snapshot.data() as Room);
+              return;
+            }
+          }
+        } catch {
+          // Firestore failed, fall through to localStorage
         }
+      }
 
-        const snapshot = await getDoc(doc(db, ROOM_COLLECTION, roomId));
-        if (!cancelled && snapshot.exists()) {
-          setRemoteRoom(snapshot.data() as Room);
-        }
-      } catch {
-        if (!cancelled) {
-          setError('Unable to load this room. Verify Firestore rules and Authentication.');
+      // Fallback: try localStorage
+      if (!cancelled) {
+        const localRoom = loadRoom(roomId);
+        if (localRoom) {
+          setRemoteRoom(localRoom);
+        } else {
+          setError('Room not found. Ask the creator to share a new link.');
         }
       }
     })();
