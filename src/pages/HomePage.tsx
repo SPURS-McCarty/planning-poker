@@ -4,6 +4,8 @@ import { BUILT_IN_SCALES } from '../types';
 import type { UserRole } from '../types';
 import { generateId, saveRoom, generateParticipantId, customScaleFromInput } from '../utils';
 import { FolderPlus, Hand, Users, Eye } from 'lucide-react';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, ensureFirebaseAuth } from '../firebase';
 
 const STEPS = ['Name your session', 'Pick a scale'];
 const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
@@ -58,7 +60,18 @@ export default function HomePage() {
     sessionStorage.setItem(`pp_me_${roomId}`, meId);
     sessionStorage.setItem(`pp_me_name_${roomId}`, yourName.trim());
     sessionStorage.setItem(`pp_me_role_${roomId}`, role);
-    window.location.assign(toAppPath(`room/${roomId}`));
+
+    // Save to Firestore immediately so other browsers can join
+    void (async () => {
+      const signedIn = await ensureFirebaseAuth();
+      if (signedIn && db) {
+        const roomDoc = doc(db, 'planningPokerRooms', roomId);
+        await setDoc(roomDoc, newRoom, { merge: true }).catch((err) => {
+          console.error('Failed to save room to Firestore', err);
+        });
+      }
+      window.location.assign(toAppPath(`room/${roomId}`));
+    })();
   }
 
   function handleJoinByCode() {
