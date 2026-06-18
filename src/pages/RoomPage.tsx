@@ -295,10 +295,10 @@ export default function RoomPage() {
   const hostParticipantId = room.hostId ?? room.participants[0]?.id ?? null;
   const meRole = me?.role ?? 'participant';
   const canVote = meRole === 'participant';
-  const canRevealCards = me?.id === hostParticipantId;
+  const canRevealCards = me?.id === hostParticipantId || meRole === 'observer';
   const votes = participantsOnly.filter((p) => p.vote !== null).map((p) => p.vote as string);
   const revealDisabledReason = !canRevealCards
-    ? 'Only the session creator can reveal cards.'
+    ? 'Only the session creator or observers can reveal cards.'
     : votes.length === 0
       ? 'Cast at least one vote to enable reveal.'
       : null;

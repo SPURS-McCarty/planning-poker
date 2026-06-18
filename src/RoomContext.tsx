@@ -200,7 +200,9 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     if (!room || !meId) return;
     const r = { ...room, participants: [...room.participants] };
     const hostParticipantId = r.hostId ?? r.participants[0]?.id;
-    if (!hostParticipantId || meId !== hostParticipantId) return;
+    const meParticipant = r.participants.find((p) => p.id === meId);
+    const isObserver = (meParticipant?.role ?? 'participant') === 'observer';
+    if (!isObserver && (!hostParticipantId || meId !== hostParticipantId)) return;
     revealAndAwardChips(r);
     broadcast(r);
   }, [room, meId]);
