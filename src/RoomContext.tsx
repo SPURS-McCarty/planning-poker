@@ -167,12 +167,17 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     }
 
     // If browser storage was cleared, recover existing identity by name/role
+    // BUT only if the matched participant doesn't already have a different clientId
+    // (to prevent multiple browsers from sharing the same participant)
     if (!me) {
       const normalizedName = name.trim().toLowerCase();
-      me = r.participants.find(
+      const candidateByName = r.participants.find(
         (p) => p.name.trim().toLowerCase() === normalizedName && (p.role ?? 'participant') === role,
       );
-      if (me) {
+      // Only reuse the participant if it doesn't have a clientId yet (freshly created)
+      // If it has a different clientId, this is a different browser joining with the same name
+      if (candidateByName && !candidateByName.clientId) {
+        me = candidateByName;
         participantId = me.id;
       }
     }
@@ -183,10 +188,12 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
       const randomChipThemeIndex = Math.floor(Math.random() * 8);
       me = { id: participantId, clientId, name, role, chips: 3, vote: null, hasVoted: false, iconIndex: randomIconIndex, chipThemeIndex: randomChipThemeIndex };
       r.participants.push(me);
-    } else if (me.name !== name || (me.role ?? 'participant') !== role || me.clientId !== clientId) {
+    } else if (me.name !== name || (me.role ?? 'participant') !== role) {
       me.name = name;
       me.role = role;
-      me.clientId = clientId;
+      if (!me.clientId) {
+        me.clientId = clientId;
+      }
     }
     
     // For fresh sessions (just created), always ensure participant has 3 chips
