@@ -1,4 +1,33 @@
-# React + TypeScript + Vite
+# Planning Poker (React + TypeScript + Vite)
+
+## Backend Modes
+
+- `legacy` (default): current Firebase/localStorage behavior.
+- `mock`: local browser-backed mock API for cross-tab testing.
+- `http`: Deere API adapter mode.
+
+Set in `.env`:
+
+```env
+VITE_BACKEND_MODE=mock
+```
+
+For HTTP mode, also set:
+
+```env
+VITE_BACKEND_MODE=http
+VITE_PLANNING_POKER_API_BASE_URL=https://your-apim-host
+```
+
+Runtime token for HTTP mode must be supplied in the browser:
+
+```js
+window.__PLANNING_POKER_TOKEN__ = '<bearer-token>'
+```
+
+---
+
+This project uses Vite with React and TypeScript.
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

@@ -18,6 +18,8 @@ interface RoomRecord {
 }
 
 const CORRECT_GUESS_EXTRA_CHIP = 1;
+const MOCK_ROOM_KEY_PREFIX = 'pp_mock_room_';
+const MOCK_ROOM_INDEX_KEY = 'pp_mock_room_index';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -58,10 +60,48 @@ function revealAndAwardChips(r: Room): void {
 }
 
 export class MockPlanningPokerApi implements PlanningPokerApi {
-  private readonly rooms = new Map<string, RoomRecord>();
+  private readRoomIndex(): string[] {
+    const raw = localStorage.getItem(MOCK_ROOM_INDEX_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as string[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private writeRoomIndex(roomIds: string[]): void {
+    localStorage.setItem(MOCK_ROOM_INDEX_KEY, JSON.stringify(Array.from(new Set(roomIds))));
+  }
+
+  private roomStorageKey(roomId: string): string {
+    return `${MOCK_ROOM_KEY_PREFIX}${roomId}`;
+  }
+
+  private loadRoomRecord(roomId: string): RoomRecord | null {
+    const raw = localStorage.getItem(this.roomStorageKey(roomId));
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as RoomRecord;
+    } catch {
+      return null;
+    }
+  }
+
+  private saveRoomRecord(roomId: string, record: RoomRecord): void {
+    localStorage.setItem(this.roomStorageKey(roomId), JSON.stringify(record));
+    const roomIds = this.readRoomIndex();
+    if (!roomIds.includes(roomId)) {
+      roomIds.push(roomId);
+      this.writeRoomIndex(roomIds);
+    }
+    // Trigger storage event for other tabs listening to this key family.
+    localStorage.setItem('pp_mock_last_update', nowIso());
+  }
 
   private getRoomRecord(roomId: string): RoomRecord {
-    const record = this.rooms.get(roomId);
+    const record = this.loadRoomRecord(roomId);
     if (!record) throw new Error('NOT_FOUND');
     return record;
   }
@@ -90,8 +130,11 @@ export class MockPlanningPokerApi implements PlanningPokerApi {
       payload,
     };
 
-    record.room = updated;
-    record.events.push(event);
+    const nextRecord: RoomRecord = {
+      room: updated,
+      events: [...record.events, event],
+    };
+    this.saveRoomRecord(roomId, nextRecord);
     return cloneRoom(updated);
   }
 
@@ -130,7 +173,7 @@ export class MockPlanningPokerApi implements PlanningPokerApi {
       updatedAt: nowIso(),
     };
 
-    this.rooms.set(roomId, {
+    this.saveRoomRecord(roomId, {
       room,
       events: [{ version: 1, type: 'room_created', at: room.updatedAt }],
     });
@@ -139,7 +182,7 @@ export class MockPlanningPokerApi implements PlanningPokerApi {
   }
 
   async getRoom(roomId: string): Promise<VersionedRoom | null> {
-    const record = this.rooms.get(roomId);
+    const record = this.loadRoomRecord(roomId);
     return record ? cloneRoom(record.room) : null;
   }
 
