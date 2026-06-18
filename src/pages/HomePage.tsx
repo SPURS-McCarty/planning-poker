@@ -6,7 +6,7 @@ import { generateId, saveRoom, generateParticipantId, customScaleFromInput } fro
 import { FolderPlus, Hand, Users, Eye } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, ensureFirebaseAuth, hasFirebaseConfig } from '../firebase';
-import { hasApiBackend, planningPokerApi } from '../backend/runtime';
+import { backendMode, hasApiBackend, planningPokerApi } from '../backend/runtime';
 
 const STEPS = ['Name your session', 'Pick a scale'];
 const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
@@ -112,6 +112,11 @@ export default function HomePage() {
       {/* Hero */}
       <div className="relative z-20 h-full max-w-5xl mx-auto px-5 sm:px-6 py-5 sm:py-7 text-center flex flex-col justify-center">
         <p className="text-xs font-semibold tracking-[0.16em] text-[#367C2B] uppercase mb-4">Agile Estimation Workspace</p>
+        {backendMode === 'mock' && (
+          <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Mock backend mode is active: shared rooms work across tabs in the same browser profile only.
+          </p>
+        )}
         {!hasFirebaseConfig && !hasApiBackend && (
           <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             Realtime backend is unavailable in this deployment. Use one browser profile and open room links in additional tabs on the same browser.

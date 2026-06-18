@@ -5,7 +5,7 @@ import { loadRoom } from '../utils';
 import type { Room, UserRole } from '../types';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, ensureFirebaseAuth, hasFirebaseConfig } from '../firebase';
-import { hasApiBackend, planningPokerApi } from '../backend/runtime';
+import { backendMode, hasApiBackend, planningPokerApi } from '../backend/runtime';
 
 const ROOM_COLLECTION = 'planningPokerRooms';
 const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
@@ -64,7 +64,11 @@ export default function JoinPage() {
             return;
           }
           if (!tryLocalFallback()) {
-            setError('Room not found in backend. Ask the creator to share a fresh link.');
+            if (backendMode === 'mock') {
+              setError('Room not found in mock backend. Open the link in another tab of the same browser profile as the host.');
+            } else {
+              setError('Room not found in backend. Ask the creator to share a fresh link.');
+            }
           }
           return;
         } catch {
