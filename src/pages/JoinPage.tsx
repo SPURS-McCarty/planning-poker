@@ -11,16 +11,17 @@ const toAppPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/
 
 export default function JoinPage() {
   const { roomId } = useParams<{ roomId: string }>();
+  const normalizedRoomId = roomId?.trim().toUpperCase();
   const { joinRoom } = useRoom();
   const [name, setName] = useState('');
   const [role, setRole] = useState<UserRole>('participant');
   const [nameTouched, setNameTouched] = useState(false);
   const [error, setError] = useState('');
-  const [remoteRoom, setRemoteRoom] = useState<Room | null>(() => roomId ? loadRoom(roomId) : null);
+  const [remoteRoom, setRemoteRoom] = useState<Room | null>(() => normalizedRoomId ? loadRoom(normalizedRoomId) : null);
 
   // Fetch room state from Firestore if not in localStorage
   useEffect(() => {
-    if (!roomId || remoteRoom) return;
+    if (!normalizedRoomId || remoteRoom) return;
 
     let cancelled = false;
 
@@ -33,7 +34,7 @@ export default function JoinPage() {
             const timeoutPromise = new Promise<null>((resolve) => {
               setTimeout(() => resolve(null), 3000);
             });
-            const firestorePromise = getDoc(doc(db, ROOM_COLLECTION, roomId));
+            const firestorePromise = getDoc(doc(db, ROOM_COLLECTION, normalizedRoomId));
             const snapshot = await Promise.race([firestorePromise, timeoutPromise]);
             if (!cancelled && snapshot && snapshot.exists()) {
               setRemoteRoom(snapshot.data() as Room);
@@ -47,7 +48,7 @@ export default function JoinPage() {
 
       // Fallback: try localStorage
       if (!cancelled) {
-        const localRoom = loadRoom(roomId);
+        const localRoom = loadRoom(normalizedRoomId);
         if (localRoom) {
           setRemoteRoom(localRoom);
         } else {
@@ -59,14 +60,14 @@ export default function JoinPage() {
     return () => {
       cancelled = true;
     };
-  }, [roomId, remoteRoom]);
+  }, [normalizedRoomId, remoteRoom]);
 
   function handleJoin() {
     if (!name.trim()) { setNameTouched(true); setError('Please enter your name.'); return; }
-    if (!roomId) return;
-    const ok = joinRoom(roomId, name.trim(), role, remoteRoom ?? undefined);
+    if (!normalizedRoomId) return;
+    const ok = joinRoom(normalizedRoomId, name.trim(), role, remoteRoom ?? undefined);
     if (!ok) { setError('Room not found. Check the link and try again.'); return; }
-    window.location.assign(toAppPath(`room/${roomId}`));
+    window.location.assign(toAppPath(`room/${normalizedRoomId}`));
   }
 
   return (

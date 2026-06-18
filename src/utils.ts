@@ -2,17 +2,23 @@ import type { Room, Scale } from './types';
 
 const ROOM_KEY_PREFIX = 'pp_room_';
 
+function normalizeRoomId(id: string): string {
+  return id.trim().toUpperCase();
+}
+
 export function saveRoom(room: Room): void {
-  localStorage.setItem(ROOM_KEY_PREFIX + room.id, JSON.stringify(room));
+  localStorage.setItem(ROOM_KEY_PREFIX + normalizeRoomId(room.id), JSON.stringify(room));
 }
 
 export function loadRoom(id: string): Room | null {
-  const raw = localStorage.getItem(ROOM_KEY_PREFIX + id);
+  const normalizedId = normalizeRoomId(id);
+  const raw = localStorage.getItem(ROOM_KEY_PREFIX + normalizedId);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Room;
     return {
       ...parsed,
+      id: normalizeRoomId(parsed.id ?? normalizedId),
       hostId: parsed.hostId ?? parsed.participants?.[0]?.id,
       participants: (parsed.participants ?? []).map((p) => ({
         ...p,
